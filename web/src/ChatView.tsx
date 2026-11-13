@@ -4,7 +4,7 @@ import { api, socket, type Chat, type Insights, type Item, type List, type Messa
 import { useVoice } from './useVoice'
 import PeoplePicker from './PeoplePicker'
 import { Avatar , VoteBar } from './Tasks'
-import { tintOf } from './Sidebar'
+import { ChatIconInner, tintOf } from './Sidebar'
 import type { StatusGroup } from './Status'
 import type { ViewMode } from './App'
 import { Countdown } from './Info'
@@ -188,7 +188,7 @@ export default function ChatView({ me, chat, jumpTo, ins, onShowItem, mode, onMo
     <section className={`${className} min-w-0 flex-col`}>
       <header className="h-16 shrink-0 flex items-center gap-3 px-3 md:px-4 bg-white border-b border-slate-200/80">
         <button onClick={onBack} className="md:hidden size-9 grid place-items-center rounded-full hover:bg-slate-100"><ArrowLeft className="size-5" /></button>
-        <div className={`size-10 shrink-0 rounded-2xl ${tintOf(chat.id)} grid place-items-center text-xl`}>{chat.photo ? <img src={chat.photo} className="size-full rounded-2xl object-cover" /> : chat.emoji}</div>
+        <div className={`size-10 shrink-0 rounded-2xl ${tintOf(chat.id)} grid place-items-center text-xl`}><ChatIconInner chat={chat} /></div>
         <div className="min-w-0">
           <h2 className="font-semibold leading-tight truncate flex items-center gap-2"><button onClick={() => setRenaming(true)} title={chat.nickname ? `Your name for this chat · original: ${chat.originalName}` : 'Rename'} className="truncate hover:text-brand-600">{chat.name}</button>{chat.info?.dueDate && <Countdown due={chat.info.dueDate} compact />}</h2>
           <p className={`text-xs truncate ${typers.length ? 'text-brand-500' : onlineNow.length ? 'text-emerald-600' : 'text-slate-400'}`}>{subtitle}</p>
@@ -578,6 +578,8 @@ function Quote({ m, mine }: { m?: Message; mine: boolean }) {
 }
 
 /** Creator: renames the chat for everyone (empty = show people's names). Anyone else: a private name only they see. */
+const ICONS = ['💬', '🏡', '👨‍👩‍👧', '⚽', '🎉', '🚀', '💼', '🍊', '💅', '📚', '✈️', '🍕', '🎮', '❤️', '🛒', '🏢']
+
 function RenameChat({ chat, onDone }: { chat: Chat; onDone: () => void }) {
   const [name, setName] = useState(chat.isCreator ? (chat.nickname ? chat.originalName ?? '' : chat.name) : chat.nickname ?? '')
   const [busy, setBusy] = useState(false)
@@ -591,7 +593,7 @@ function RenameChat({ chat, onDone }: { chat: Chat; onDone: () => void }) {
     try { await api.setChatPhoto(chat.id, f) } catch (e) { alert((e as Error).message) } finally { setBusy(false) }
   }
   // what "remove" means: the creator clears the chat photo; others drop their private one
-  const canRemove = chat.isCreator ? !!chat.photo && !(chat.direct && !chat.hasOwnPhoto) : !!chat.hasOwnPhoto
+  const canRemove = chat.isCreator ? !!chat.hasChatPhoto : !!chat.hasOwnPhoto
   return (
     <form onSubmit={(e) => { e.preventDefault(); save(name) }} className="pop-in rounded-2xl bg-white/95 backdrop-blur border border-slate-200 shadow-lg p-4 relative">
       <button type="button" onClick={onDone} className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"><X className="size-4" /></button>
@@ -603,8 +605,8 @@ function RenameChat({ chat, onDone }: { chat: Chat; onDone: () => void }) {
       </p>
       <div className="mt-3 flex items-center gap-3">
         <div className="relative shrink-0">
-        <button type="button" onClick={() => pickPhoto.current?.click()} title="Change photo" className={`relative size-14 shrink-0 rounded-2xl overflow-hidden ${tintOf(chat.id)} grid place-items-center text-2xl group`}>
-          {chat.photo ? <img src={chat.photo} className="size-full object-cover" /> : chat.emoji}
+        <button type="button" onClick={() => pickPhoto.current?.click()} title="Change photo" className={`relative size-14 shrink-0 rounded-2xl ${tintOf(chat.id)} grid place-items-center text-2xl group`}>
+          <ChatIconInner chat={chat} />
           <span className="absolute inset-0 bg-black/40 text-white grid place-items-center opacity-0 group-hover:opacity-100 transition">{busy ? <Loader2 className="size-5 animate-spin" /> : <Camera className="size-5" />}</span>
         </button>
         {canRemove && <button type="button" onClick={() => { if (confirm('Remove this photo?')) photo(null) }} title="Remove photo" className="absolute -top-1 -right-1 size-6 rounded-full bg-white border border-slate-200 shadow text-slate-500 hover:text-rose-600 grid place-items-center"><X className="size-3.5" /></button>}
@@ -613,9 +615,19 @@ function RenameChat({ chat, onDone }: { chat: Chat; onDone: () => void }) {
         <div className="text-xs space-y-1">
           <button type="button" onClick={() => pickPhoto.current?.click()} className="block text-brand-600 hover:underline">{chat.photo ? 'Change photo' : 'Add photo'}</button>
           {canRemove && <button type="button" onClick={() => photo(null)} className="block text-slate-500 hover:text-rose-600">Remove photo</button>}
-          <p className="text-slate-400">{chat.isCreator ? 'Everyone sees it' : 'Only you see it'}{chat.direct ? ' · default is their profile photo' : ''}</p>
+          <p className="text-slate-400">{chat.isCreator ? 'Everyone sees it' : 'Only you see it'}{chat.pair ? ' · default is their profile photo' : ''}</p>
         </div>
       </div>
+      {chat.isCreator && (
+        <div className="mt-3">
+          <p className="text-xs font-medium text-slate-500 mb-1.5">Chat icon {chat.photo ? '(small badge on the photo)' : ''}</p>
+          <div className="flex flex-wrap gap-1">
+            {ICONS.map((e) => (
+              <button key={e} type="button" onClick={() => api.updateChat(chat.id, { emoji: e })} className={`size-8 rounded-lg text-lg grid place-items-center transition ${chat.emoji === e ? 'bg-brand-50 ring-2 ring-brand-300' : 'hover:bg-slate-100'}`}>{e}</button>
+            ))}
+          </div>
+        </div>
+      )}
       <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={chat.isCreator ? 'e.g. Family, Weekend crew' : chat.originalName} maxLength={60} className="mt-3 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100" />
       <div className="mt-3 flex items-center gap-2">
         {!chat.isCreator && chat.nickname && <button type="button" onClick={() => save('')} className="text-xs text-slate-500 hover:text-rose-600">Use original name</button>}

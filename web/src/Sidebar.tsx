@@ -73,7 +73,7 @@ export default function Sidebar({ me, chats, activeId, everything, onEverything,
             return (
               <button key={c.id} onClick={() => onOpen(c.id)} className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl text-left transition ${isActive ? 'bg-brand-50' : 'hover:bg-slate-50'}`}>
                 <div className={`relative size-11 shrink-0 rounded-2xl ${tintOf(c.id)} grid place-items-center text-xl`}>
-                  {c.photo ? <img src={c.photo} className="size-full rounded-2xl object-cover" /> : c.emoji}
+                  <ChatIconInner chat={c} />
                   {online && <span title="Someone is online" className="absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full bg-emerald-500 ring-2 ring-white" />}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -295,5 +295,22 @@ function SettingsPanel({ me, onMe, onClose }: { me: User; onMe: (u: User) => voi
       </div>
 
     </div>
+  )
+}
+
+/**
+ * What fills a chat's icon: a photo when there is one; for a 1-to-1 chat without a photo, the other
+ * person's initial on a default person badge; otherwise the chat's emoji icon (always present).
+ */
+export function ChatIconInner({ chat }: { chat: Chat }) {
+  // photo: your own > the creator's > (2 people) the other person's profile photo. No photo: the chat icon.
+  // When a photo shows, the chat icon sits small in the top-left corner.
+  const icon = chat.emoji || "💬"
+  if (!chat.photo) return <>{icon}</>
+  return (
+    <span className="relative size-full rounded-[inherit]">
+      <img src={chat.photo} className="size-full rounded-[inherit] object-cover" />
+      <span className="absolute -top-1 -left-1 size-[45%] min-w-4 min-h-4 rounded-full bg-white shadow ring-1 ring-slate-200 grid place-items-center text-[0.55em] leading-none">{icon}</span>
+    </span>
   )
 }

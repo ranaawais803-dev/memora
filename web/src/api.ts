@@ -31,7 +31,7 @@ export interface ChatStats {
   media: { photos: number; videos: number; voice: number; files: number }
   keeps: { open: number; done: number }; plans: { open: number; done: number }
 }
-export interface Chat { id: string; name: string; createdBy?: string; photo?: string; hasOwnPhoto?: boolean; direct?: boolean; originalName?: string; nickname?: string; isCreator?: boolean; emoji: string; members: string[]; info?: ChatInfo; people: Person[]; insights: Insights; last: Message | null; urgent: number; unread: number }
+export interface Chat { id: string; name: string; createdBy?: string; photo?: string; hasOwnPhoto?: boolean; direct?: boolean; pair?: boolean; hasChatPhoto?: boolean; faces?: { name: string; avatar?: string }[]; originalName?: string; nickname?: string; isCreator?: boolean; emoji: string; members: string[]; info?: ChatInfo; people: Person[]; insights: Insights; last: Message | null; urgent: number; unread: number }
 export interface Status { ai: boolean; drive: { configured: boolean; connected: boolean; email?: string } }
 export type Library = Record<string, Record<string, (Media & { messageId: string; sender: string; createdAt: string })[]>>
 export interface SearchResult { type: string; text: string; chatId: string; chatName: string; emoji: string; messageId?: string; sender?: string; createdAt?: string; media?: Media }

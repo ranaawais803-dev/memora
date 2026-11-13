@@ -169,6 +169,8 @@ export class Store {
     this.db.statuses = (this.db.statuses ?? []).filter((s) => Date.now() - +new Date(s.createdAt) < STATUS_HOURS * 3600000);
     for (const c of this.db.chats) {
       c.memberIds ??= [];
+      // older 1-to-1 chats had no custom name: they show the other person's name
+      if (c.direct) c.autoName = true;
       // older unnamed 1-to-1 chats were saved as "New chat"
       if (c.name === 'New chat' && c.memberIds.length === 2 && c.direct === undefined) c.direct = true;
     }

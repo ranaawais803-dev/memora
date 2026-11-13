@@ -3,7 +3,7 @@ import { RefreshCw, Mic, FileText, Video, ExternalLink, Loader2, Sun, Bookmark, 
 import Info, { InfoStrip } from './Info'
 import Tasks, { Avatar, dayLabel, isMissed, isPending } from './Tasks'
 import { ModeSwitch } from './ChatView'
-import { tintOf } from './Sidebar'
+import { ChatIconInner, tintOf } from './Sidebar'
 import type { ViewMode } from './App'
 import { ChatStatuses, type StatusGroup } from './Status'
 import { api, socket, timeShort, type Chat, type Insights, type Item, type Library, type List, type Period, type SearchResult } from './api'
@@ -66,7 +66,7 @@ export default function Organized({ chat, me, ins, setIns, focus, mode, onMode, 
   return (
     <aside className={`${className} flex-col border-l border-slate-200/80 bg-canvas`}>
       <header className="h-16 shrink-0 flex items-center gap-3 px-4 md:px-5 bg-white border-b border-slate-200/80">
-        <div className={`size-10 shrink-0 rounded-2xl ${tintOf(chat.id)} grid place-items-center text-xl lg:hidden`}>{chat.photo ? <img src={chat.photo} className="size-full rounded-2xl object-cover" /> : chat.emoji}</div>
+        <div className={`size-10 shrink-0 rounded-2xl ${tintOf(chat.id)} grid place-items-center text-xl lg:hidden`}><ChatIconInner chat={chat} /></div>
         <div className="min-w-0">
           <h3 className="font-semibold leading-tight truncate">Organized for you</h3>
           <p className="text-xs text-slate-400 truncate">{ins?.updatedAt ? `Updated ${timeShort(ins.updatedAt)}` : 'Sorting things out…'}</p>

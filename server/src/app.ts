@@ -185,16 +185,25 @@ export class ApiController {
     const msgs = this.store.messages(c.id);
     const read = c.reads?.[user.id] ?? '';
     const other = c.direct ? this.store.user(c.memberIds.find((id) => id !== user.id) ?? '') : undefined;
+    // any 2-person chat, renamed or not, shows the other person's profile photo by default
+    const pair = c.memberIds.length === 2 ? this.store.user(c.memberIds.find((id) => id !== user.id) ?? '') : undefined;
     // 1) no name: the other people's names  2) the creator's name for it  3) your own name for it, only you see that
     const names = c.memberIds.filter((id) => id !== user.id).map((id) => this.store.user(id)?.name.split(' ')[0]).filter(Boolean);
-    const original = other?.name ?? (c.autoName ? names.join(', ') || 'Just you' : c.name);
+    // one rule for every chat: the creator's custom name, otherwise everyone else's names
+    void other;
+    const auto = names.length ? names.slice(0, 3).join(', ') + (names.length > 3 ? ', …' : '') : 'Just you';
+    const original = c.autoName || c.direct ? auto : c.name;
     const nickname = c.nicknames?.[user.id];
     return {
       ...c,
       nicknames: undefined,
       name: nickname || original,
       // your own photo for it > the creator's chat photo > (1-to-1) the other person's profile photo
-      photo: c.photoFor?.[user.id] || c.photo || other?.avatar || undefined,
+      photo: c.photoFor?.[user.id] || c.photo || pair?.avatar || undefined,
+      pair: c.memberIds.length === 2,
+      // up to two other members, for the group picture when there is no custom photo
+      faces: c.memberIds.filter((id) => id !== user.id).map((id) => this.store.user(id)).filter(Boolean).sort((a, b) => Number(!!b!.avatar) - Number(!!a!.avatar)).slice(0, 2).map((u) => ({ name: u!.name, avatar: u!.avatar })),
+      hasChatPhoto: !!c.photo, // a custom photo the creator set (not someone's profile photo)
       photoFor: undefined,
       hasOwnPhoto: !!c.photoFor?.[user.id],
       originalName: original,
@@ -245,7 +254,7 @@ export class ApiController {
       // unnamed: 1-to-1 shows the other person's name (see view), groups use first names
       name: given || people.map((u) => u.name.split(' ')[0]).join(', '),
       direct,
-      autoName: !given && !direct,
+      autoName: !given,
       emoji: b.emoji || '💬',
       members: people.map((u) => u.name),
       memberIds: people.map((u) => u.id),
@@ -267,8 +276,8 @@ export class ApiController {
       const name = b.name.trim().slice(0, 60);
       if (!chat.createdBy || chat.createdBy === me.id) {
         // the creator renames it for everyone; clearing it goes back to showing people's names
-        if (name) { chat.name = name; chat.direct = false; chat.autoName = false; }
-        else if (!chat.direct) chat.autoName = true;
+        if (name) { chat.name = name; chat.autoName = false; chat.direct = false; }
+        else chat.autoName = true;
       } else {
         // anyone else: a private name, only they see it
         chat.nicknames ??= {};
