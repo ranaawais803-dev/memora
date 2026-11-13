@@ -197,21 +197,9 @@ function Summary({ ins, onTopic, onTab }: { ins: Insights; onTopic: (t: string) 
   )
 }
 
-/** Picks the window that fits how long the chat has been going: a 2-day chat gets "This week", a 3-month one "This year". */
-function autoPeriod(ins: Insights): Period {
-  const age = ins.firstAt ? (Date.now() - +new Date(ins.firstAt)) / 86400000 : 0
-  const fits: Period = age < 1 ? 'today' : age < 7 ? 'week' : age < 30 ? 'month' : 'year'
-  // fall back to the nearest window that actually has something to say
-  const order: Period[] = ['today', 'week', 'month', 'year']
-  const from = order.indexOf(fits)
-  return [...order.slice(from), ...order.slice(0, from).reverse()].find((p) => ins.summaries[p]) ?? fits
-}
-
-/** One summary card, with a window filter on the right. */
+/** One summary card: today by default, with week / month / year on the right. */
 function Recap({ ins }: { ins: Insights }) {
-  const auto = autoPeriod(ins)
-  const [picked, setPicked] = useState<Period | null>(null)
-  const period = picked ?? auto
+  const [period, setPeriod] = useState<Period>('today')
   // a longer window that adds nothing new just repeats the shorter one
   const text = ins.summaries[period] || PERIODS.slice(0, PERIODS.findIndex((p) => p.id === period)).reverse().map((p) => ins.summaries[p.id]).find(Boolean)
 
@@ -221,19 +209,13 @@ function Recap({ ins }: { ins: Insights }) {
         <h4 className="font-semibold flex-1">What's been happening</h4>
         <div className="flex p-0.5 rounded-lg bg-slate-100 text-xs font-medium">
           {PERIODS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPicked(p.id === auto ? null : p.id)}
-              title={p.id === auto ? 'Picked automatically for this chat' : undefined}
-              className={`px-2 py-1 rounded-md transition ${period === p.id ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-            >
+            <button key={p.id} onClick={() => setPeriod(p.id)} className={`px-2 py-1 rounded-md transition ${period === p.id ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>
               {p.label.replace('This ', '')}
             </button>
           ))}
         </div>
       </div>
-      <p className={`text-sm mt-3 leading-relaxed ${text ? 'text-slate-700' : 'text-slate-400'}`}>{text || 'Quiet. Nothing new.'}</p>
-      <p className="text-[11px] text-slate-400 mt-2">{picked ? <button onClick={() => setPicked(null)} className="hover:text-brand-600">Back to auto</button> : <>Auto · {PERIODS.find((p) => p.id === auto)!.label.toLowerCase()}</>}</p>
+      <p className={`text-sm mt-3 leading-relaxed ${text ? 'text-slate-700' : 'text-slate-400'}`}>{text || (period === 'today' ? 'Quiet today. Nothing new yet.' : 'Quiet. Nothing new.')}</p>
     </Card>
   )
 }

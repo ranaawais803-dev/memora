@@ -652,7 +652,7 @@ function ItemStatus({ item, list, chatId, people, meId, onOpen }: { item: Item; 
       <button onClick={onOpen} className="flex items-center gap-1.5 font-medium text-slate-700 hover:text-brand-600 max-w-full">
         {isPlan ? <CalendarHeart className="size-3.5 shrink-0 text-brand-500" /> : <Bookmark className="size-3.5 shrink-0 text-emerald-600" />}
         <span className={`truncate ${item.skipped ? 'line-through text-slate-400' : ''}`}>{item.text}</span>
-        {item.skipped && <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-500">Skipped</span>}
+        {item.skipped && <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-500">Not needed</span>}
       </button>
       {!item.skipped && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

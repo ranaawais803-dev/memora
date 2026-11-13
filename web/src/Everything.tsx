@@ -1,17 +1,44 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Bookmark, CalendarHeart, Search, X, ChevronRight, Hash, Lightbulb, Images, Mic, Video, FileText } from 'lucide-react'
+import { ArrowLeft, Ban, Bookmark, CalendarDays, CalendarHeart, Search, X, ChevronRight, Hash, Lightbulb, Images, Mic, Video, FileText } from 'lucide-react'
 import { api, socket, type Chat, type Item, type Library, type List, type User } from './api'
 import { Avatar, DoneButton, VoteBar, dayLabel, isMissed, isPast, isPending } from './Tasks'
 import { tintOf } from './Sidebar'
 
 /** Every keep and plan from every chat in one place, like a status feed you can glance at without opening a chat. */
-const FILTERS = ['Pending', 'Mine', 'Done', 'Skipped', 'All'] as const
+/** "Added today", "Added yesterday", "Added this week", "Added earlier" for items without a date. */
+const addedLabel = (iso?: string) => {
+  if (!iso) return 'No date'
+  const days = Math.floor((Date.now() - +new Date(iso)) / 86400000)
+  return days < 1 ? 'Added today' : days < 2 ? 'Added yesterday' : days < 7 ? 'Added this week' : 'Added earlier'
+}
+
+/** Date filter: by due date, or by when it was added for items without one. */
+const WHEN = [
+  { id: 'any', label: 'Any date' },
+  { id: 'today', label: 'Today' },
+  { id: 'week', label: 'Next 7 days' },
+  { id: 'month', label: 'Next 30 days' },
+  { id: 'past', label: 'Past dates' },
+  { id: 'none', label: 'No date' },
+  { id: 'added7', label: 'Added this week' },
+] as const
+type When = (typeof WHEN)[number]['id']
+const dayStr = (n = 0) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
+const matchWhen = (r: Item, w: When) =>
+  w === 'any' ? true
+  : w === 'none' ? !r.due
+  : w === 'added7' ? Date.now() - +new Date(r.createdAt ?? 0) < 7 * 86400000
+  : !r.due ? false
+  : w === 'past' ? r.due < dayStr()
+  : w === 'today' ? r.due === dayStr()
+  : r.due >= dayStr() && r.due <= dayStr(w === 'week' ? 7 : 30)
+
+const FILTERS = ['Pending', 'Mine', 'Missed', 'Done', 'Not needed', 'All'] as const
 type Filter = (typeof FILTERS)[number]
 type Row = Item & { list: List; chat: Chat }
-type Tab = List | 'topics' | 'handy' | 'library'
+type Tab = 'both' | 'topics' | 'handy' | 'library'
 const TABS: { id: Tab; label: string; icon: typeof Hash }[] = [
-  { id: 'plans', label: 'Plans', icon: CalendarHeart },
-  { id: 'keeps', label: 'Keeps', icon: Bookmark },
+  { id: 'both', label: 'Plans & Keeps', icon: CalendarHeart },
   { id: 'topics', label: 'Topics', icon: Hash },
   { id: 'handy', label: 'Handy', icon: Lightbulb },
   { id: 'library', label: 'Library', icon: Images },
@@ -29,13 +56,13 @@ interface Props {
 }
 
 export default function Everything({ me, chats, onChats, onOpenItem, onOpenChat, onBack, onScope, className = '' }: Props) {
-  const [tab, setTab] = useState<Tab>('plans')
-  const list: List = tab === 'keeps' ? 'keeps' : 'plans'
-  const isList = tab === 'plans' || tab === 'keeps'
+  const [tab, setTab] = useState<Tab>('both')
+  const isList = tab === 'both'
   const [filter, setFilter] = useState<Filter>('Pending')
   const [chatId, setChatId] = useState<string | null>(null)
   useEffect(() => { onScope?.(chatId) }, [chatId]) // eslint-disable-line react-hooks/exhaustive-deps
   const [q, setQ] = useState('')
+  const [when, setWhen] = useState<When>('any')
   const [openRow, setOpenRow] = useState<string | null>(null)
 
   const all = useMemo<Row[]>(
@@ -46,17 +73,24 @@ export default function Everything({ me, chats, onChats, onOpenItem, onOpenChat,
   const people = chats.filter((c) => pendingIn(c) > 0 || c.insights?.topics?.length || c.insights?.knowledge?.length)
 
   const mine = (r: Row) => !!r.assignee && (r.assignee === me.name || r.assignee.toLowerCase() === me.name.split(' ')[0].toLowerCase() || r.assignee === 'You')
-  const rows = all
+  const rowsOf = (list: List) => all
     .filter((r) => r.list === list && (!chatId || r.chat.id === chatId))
-    .filter((r) => (filter === 'Pending' ? isPending(r, r.list) : filter === 'Mine' ? isPending(r, r.list) && mine(r) : filter === 'Done' ? r.done : filter === 'Skipped' ? r.skipped : true))
+    .filter((r) => (filter === 'Pending' ? isPending(r, r.list) : filter === 'Mine' ? isPending(r, r.list) && mine(r) : filter === 'Missed' ? (r.list === 'plans' ? isPast(r, 'plans') : isMissed(r)) : filter === 'Done' ? r.done : filter === 'Not needed' ? r.skipped : true))
+    .filter((r) => matchWhen(r, when))
     .filter((r) => !q.trim() || [r.text, r.notes, r.assignee, r.chat.name].some((s) => s?.toLowerCase().includes(q.trim().toLowerCase())))
     .sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999') || +new Date(b.createdAt ?? 0) - +new Date(a.createdAt ?? 0))
 
   // plans read best by day, keeps by chat
-  const groups = new Map<string, Row[]>()
-  for (const r of rows) {
-    const key = list === 'plans' ? (r.due ? (isPast(r, 'plans') ? 'Gone by' : dayLabel(r.due)) : 'No date yet') : r.chat.name
-    groups.set(key, [...(groups.get(key) ?? []), r])
+  const groupsOf = (list: List) => {
+    const groups = new Map<string, Row[]>()
+    for (const r of rowsOf(list)) {
+      // both lists go by date: the due date when there is one, otherwise when it was added
+      const key = r.due
+        ? (list === 'plans' ? (isPast(r, 'plans') ? 'Gone by' : dayLabel(r.due)) : isMissed(r) ? 'Missed' : dayLabel(r.due))
+        : addedLabel(r.createdAt)
+      groups.set(key, [...(groups.get(key) ?? []), r])
+    }
+    return groups
   }
 
   const toggle = (r: Row) => {
@@ -67,6 +101,13 @@ export default function Everything({ me, chats, onChats, onOpenItem, onOpenChat,
     api.updateItem(r.chat.id, r.id, { done: !mine }).catch(() => {})
   }
 
+
+  /** Skip a keep / mark a plan as not relevant (or bring it back). */
+  const skip = (r: Row) => {
+    const next = !r.skipped
+    onChats((cs) => cs.map((c) => (c.id !== r.chat.id ? c : { ...c, insights: { ...c.insights, [r.list]: c.insights[r.list].map((x) => (x.id === r.id ? { ...x, skipped: next } : x)) } })))
+    api.updateItem(r.chat.id, r.id, { skipped: next }).catch(() => {})
+  }
 
   const scoped = chats.filter((c) => !chatId || c.id === chatId)
   const count = (l: List) => all.filter((r) => r.list === l && (!chatId || r.chat.id === chatId) && isPending(r, l)).length
@@ -91,7 +132,15 @@ export default function Everything({ me, chats, onChats, onOpenItem, onOpenChat,
           {isList && FILTERS.map((f) => (
             <button key={f} onClick={() => setFilter(f)} className={`px-2.5 py-1 rounded-lg text-xs font-medium ${filter === f ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>{f}</button>
           ))}
-          <label className="ml-auto flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 w-full sm:w-52">
+          {isList && (
+            <label className="ml-auto flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 text-sm">
+              <CalendarDays className="size-3.5 text-slate-400" />
+              <select value={when} onChange={(e) => setWhen(e.target.value as When)} className="bg-transparent outline-none text-sm text-slate-700 cursor-pointer">
+                {WHEN.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+              </select>
+            </label>
+          )}
+          <label className={`${isList ? '' : 'ml-auto '}flex items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 py-1.5 w-full sm:w-52`}>
             <Search className="size-3.5 text-slate-400" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${TABS.find((t) => t.id === tab)?.label.toLowerCase()}…`} className="flex-1 min-w-0 bg-transparent outline-none text-sm" />
             {q && <button onClick={() => setQ('')}><X className="size-3.5 text-slate-400" /></button>}
@@ -103,55 +152,72 @@ export default function Everything({ me, chats, onChats, onOpenItem, onOpenChat,
         {tab === 'topics' ? <TopicsAll chats={scoped} q={q} onOpen={onOpenChat} />
         : tab === 'handy' ? <HandyAll chats={scoped} q={q} onOpen={onOpenChat} />
         : tab === 'library' ? <LibraryAll chats={scoped} q={q} onOpen={onOpenChat} />
-        : !rows.length ? (
-          <div className="text-center py-16 text-slate-500">
-            <p className="text-3xl">{filter === 'Pending' ? '🌤️' : '🔍'}</p>
-            <p className="mt-2 font-medium text-slate-700">{filter === 'Pending' ? 'Nothing waiting on you' : 'Nothing here'}</p>
-            <p className="text-sm mt-1">Just keep chatting. Things show up here by themselves.</p>
-          </div>
-        ) : (
-          <div className="space-y-5">
-            {[...groups].map(([g, items]) => (
-              <div key={g}>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">{g}</p>
-                <ul className="rounded-2xl bg-white border border-slate-200/70 divide-y divide-slate-100 overflow-hidden">
-                  {items.map((r) => (
-                    <li key={r.chat.id + r.id} className="px-3.5 py-3 hover:bg-slate-50">
-                     <div className="flex items-center gap-3">
-                      <button onClick={() => setOpenRow(openRow === r.chat.id + r.id ? null : r.chat.id + r.id)} className="min-w-0 flex-1 text-left">
-                        <p className={`text-[15px] ${r.done ? 'line-through text-slate-400' : 'text-slate-800'}`}>{r.text}</p>
-                        <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 ${tintOf(r.chat.id)}`}>{r.chat.emoji} {r.chat.name}</span>
-                          {r.due && list === 'keeps' && <span className={isMissed(r) ? 'text-rose-600 font-medium' : ''}>{dayLabel(r.due)}</span>}
-                          {r.when && !r.due && <span>{r.when}</span>}
-                          {r.notes && openRow !== r.chat.id + r.id && <span className="truncate">· {r.notes}</span>}
-                        </div>
-                      </button>
-                      {r.assignee && <Avatar name={r.assignee} />}
-                      {!r.skipped && <DoneButton done={!!r.done} label={r.list === 'plans' ? 'Happened' : 'Done'} onClick={() => toggle(r)} />}
-                      <GoChat onClick={() => onOpenItem(r.chat.id, r.id, r.list)} />
-                     </div>
-                     {r.list === 'plans' && !r.done && (
-                       <div className="ml-8 mt-2">
-                         <VoteBar it={r} chatId={r.chat.id} people={r.chat.people} meId={me.id} onVoted={(v) => onChats((cs) => cs.map((c) => (c.id !== r.chat.id ? c : { ...c, insights: { ...c.insights, plans: c.insights.plans.map((x) => (x.id === v.id ? v : x)) } })))} />
-                       </div>
-                     )}
-                     {openRow === r.chat.id + r.id && (
-                       <div className="ml-8 mt-2 space-y-1.5 text-sm text-slate-600">
-                         {r.notes && <p className="whitespace-pre-wrap">{r.notes}</p>}
-                         {r.when && <p className="text-xs text-slate-500">🕒 {r.when}</p>}
-                         {r.assignee && <p className="text-xs text-slate-500">👤 {r.assignee}</p>}
-                         {!!r.subtasks?.length && (
-                           <ul className="space-y-0.5">{r.subtasks.map((st) => <li key={st.id} className={`flex items-center gap-1.5 ${st.done ? 'line-through text-slate-400' : ''}`}><span className="text-slate-400">•</span>{st.text}</li>)}</ul>
-                         )}
-                         {!r.notes && !r.when && !r.assignee && !r.subtasks?.length && <p className="text-xs text-slate-400">No more details. Tap the arrow to see it in the chat.</p>}
-                       </div>
-                     )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+        : (
+          <div className="grid gap-6 lg:grid-cols-2 items-start">
+            {(['keeps', 'plans'] as const).map((list) => {
+              const groups = groupsOf(list)
+              const Icon = list === 'plans' ? CalendarHeart : Bookmark
+              return (
+                <section key={list} className="min-w-0">
+                  <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <Icon className={`size-4 ${list === 'plans' ? 'text-brand-500' : 'text-emerald-600'}`} />
+                    {list === 'plans' ? 'Plans' : 'Keeps'}
+                    <span className="rounded-full bg-slate-100 px-2 text-xs font-medium text-slate-500">{rowsOf(list).length}</span>
+                  </h3>
+                  {!groups.size ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-white/60 py-10 text-center text-sm text-slate-500">
+                      <p className="text-2xl">{filter === 'Pending' ? '🌤️' : '🔍'}</p>
+                      <p className="mt-1">{filter === 'Pending' ? (list === 'plans' ? 'No plans waiting' : 'Nothing to remember') : 'Nothing here'}</p>
+                    </div>
+                  ) : (
+                  <div className="space-y-5">
+                    {[...groups].map(([g, items]) => (
+                      <div key={g}>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">{g}</p>
+                        <ul className="rounded-2xl bg-white border border-slate-200/70 divide-y divide-slate-100 overflow-hidden">
+                          {items.map((r) => (
+                            <li key={r.chat.id + r.id} className="px-3.5 py-3 hover:bg-slate-50">
+                             <div className="flex items-center gap-3">
+                              <button onClick={() => setOpenRow(openRow === r.chat.id + r.id ? null : r.chat.id + r.id)} className="min-w-0 flex-1 text-left">
+                                <p className={`text-[15px] ${r.done || r.skipped ? 'line-through text-slate-400' : 'text-slate-800'}`}>{r.text}</p>
+                                {r.notes && openRow !== r.chat.id + r.id && <p className="mt-0.5 text-xs text-slate-500 line-clamp-1">{r.notes}</p>}
+                                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                                  <span className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 font-medium text-slate-700 ${tintOf(r.chat.id)}`}><span className="shrink-0">{r.chat.emoji}</span><span className="break-words">{r.chat.name}</span></span>
+                                  {r.due && list === 'keeps' && <span className={isMissed(r) ? 'text-rose-600 font-medium' : ''}>{dayLabel(r.due)}</span>}
+                                  {r.when && !r.due && <span>{r.when}</span>}
+                                </div>
+                              </button>
+                              {r.assignee && <Avatar name={r.assignee} />}
+                              {!r.skipped && <DoneButton done={!!r.done} label={r.list === 'plans' ? 'Happened' : 'Done'} onClick={() => toggle(r)} />}
+                      <button onClick={() => skip(r)} title={r.skipped ? 'Bring it back' : r.list === 'plans' ? 'Not happening / not relevant' : 'Skip, not needed'} className={`shrink-0 h-7 px-2.5 rounded-full border text-xs font-medium flex items-center gap-1 transition ${r.skipped ? 'bg-slate-700 border-slate-700 text-white' : 'border-slate-200 text-slate-500 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50'}`}><Ban className="size-3.5" />{r.skipped ? 'Bring back' : r.list === 'plans' ? 'Not relevant' : 'Skip'}</button>
+                              <GoChat onClick={() => onOpenItem(r.chat.id, r.id, r.list)} />
+                             </div>
+                             {r.list === 'plans' && !r.done && (
+                               <div className="ml-8 mt-2">
+                                 <VoteBar it={r} chatId={r.chat.id} people={r.chat.people} meId={me.id} onVoted={(v) => onChats((cs) => cs.map((c) => (c.id !== r.chat.id ? c : { ...c, insights: { ...c.insights, plans: c.insights.plans.map((x) => (x.id === v.id ? v : x)) } })))} />
+                               </div>
+                             )}
+                             {openRow === r.chat.id + r.id && (
+                               <div className="ml-8 mt-2 space-y-1.5 text-sm text-slate-600">
+                                 {r.notes && <p className="whitespace-pre-wrap">{r.notes}</p>}
+                                 {r.when && <p className="text-xs text-slate-500">🕒 {r.when}</p>}
+                                 {r.assignee && <p className="text-xs text-slate-500">👤 {r.assignee}</p>}
+                                 {!!r.subtasks?.length && (
+                                   <ul className="space-y-0.5">{r.subtasks.map((st) => <li key={st.id} className={`flex items-center gap-1.5 ${st.done ? 'line-through text-slate-400' : ''}`}><span className="text-slate-400">•</span>{st.text}</li>)}</ul>
+                                 )}
+                                 {!r.notes && !r.when && !r.assignee && !r.subtasks?.length && <p className="text-xs text-slate-400">No more details. Tap the arrow to see it in the chat.</p>}
+                               </div>
+                             )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                  )}
+                </section>
+              )
+            })}
           </div>
         )}
       </div>
@@ -160,7 +226,7 @@ export default function Everything({ me, chats, onChats, onOpenItem, onOpenChat,
         <div className="flex items-center gap-1 overflow-x-auto scroll-thin">
           {TABS.map(({ id, label, icon: Icon }) => {
             const on = tab === id
-            const n = id === 'plans' || id === 'keeps' ? count(id) : 0
+            const n = id === 'both' ? count('plans') + count('keeps') : 0
             return (
               <button key={id} onClick={() => setTab(id)} className={`shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-full text-sm font-medium transition ${on ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
                 <Icon className="size-4" /> {label}

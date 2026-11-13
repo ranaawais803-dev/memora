@@ -3,7 +3,7 @@ import { Ban, Check, Plus, Sparkles, Trash2, CalendarDays, Star, List as ListIco
 import { api, type Chat, type Item, type List, type Person, type Subtask, type Vote } from './api'
 
 /** Friendly words only: Weave should feel like chat, not work software. */
-const FILTERS = ['Pending', 'Mine', 'Missed', 'Past', 'Done', 'Skipped', 'All'] as const
+const FILTERS = ['Pending', 'Mine', 'Missed', 'Past', 'Done', 'Not needed', 'All'] as const
 type Filter = (typeof FILTERS)[number]
 
 /** A plan whose date has gone by is "past", not pending. Keeps with a passed date are "missed" and still pending. */
@@ -120,7 +120,7 @@ export default function Tasks({ chat, me, list, items, empty, onItems, focusId, 
   const match = (it: Item, f: Filter) =>
     f === 'Pending' ? isPending(it, list)
     : f === 'Done' ? !!it.done
-    : f === 'Skipped' ? !!it.skipped
+    : f === 'Not needed' ? !!it.skipped
     : f === 'Mine' ? isPending(it, list) && it.assignee === me
     : f === 'Missed' ? !isPlan && isMissed(it)
     : f === 'Past' ? isPast(it, list)
@@ -184,7 +184,7 @@ export default function Tasks({ chat, me, list, items, empty, onItems, focusId, 
         <ul className="space-y-1">
           {shown.map((it) => (
             <li key={it.id} id={`item-${it.id}`} className={`rounded-xl transition ${open === it.id ? 'bg-slate-50 ring-1 ring-slate-200' : 'hover:bg-slate-50'}`}>
-              <Row it={it} isPlan={isPlan} past={isPast(it, list)} onToggle={() => toggleMine(it)} onOpen={() => setOpen(open === it.id ? null : it.id)} onJump={onJump} />
+              <Row it={it} isPlan={isPlan} past={isPast(it, list)} onToggle={() => toggleMine(it)} onSkip={() => patch(it, { skipped: !it.skipped })} onOpen={() => setOpen(open === it.id ? null : it.id)} onJump={onJump} />
               {isPlan && !it.done && <div className="pl-10 pr-2 pb-2.5 -mt-1"><VoteBar it={it} chatId={chat.id} people={chat.people} meId={chat.people.find((p) => p.name === me)?.id} onVoted={(v) => onItems(items.map((x) => (x.id === it.id ? v : x)))} /></div>}
               {open === it.id && <Editor it={it} chat={chat} list={list} onPatch={(p) => patch(it, p)} onMove={(l) => { onItems(items.filter((x) => x.id !== it.id)); api.updateItem(chat.id, it.id, { list: l }) }} onDelete={() => remove(it)} onJump={onJump} />}
             </li>
@@ -195,14 +195,14 @@ export default function Tasks({ chat, me, list, items, empty, onItems, focusId, 
   )
 }
 
-function Row({ it, isPlan, past, onToggle, onOpen, onJump }: { it: Item; isPlan: boolean; past: boolean; onToggle: () => void; onOpen: () => void; onJump: (id: string) => void }) {
+function Row({ it, isPlan, past, onToggle, onSkip, onOpen, onJump }: { it: Item; isPlan: boolean; past: boolean; onToggle: () => void; onSkip: () => void; onOpen: () => void; onJump: (id: string) => void }) {
   const steps = it.subtasks ?? []
   const stepsDone = steps.filter((s) => s.done).length
   return (
     <div className="flex items-start gap-3 pl-3 pr-2 py-2.5">
       <button onClick={onOpen} className="min-w-0 flex-1 text-left">
         <span className={`block text-sm ${it.done || it.skipped ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-          {it.skipped && <span className="mr-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 no-underline inline-block">Skipped</span>}
+          {it.skipped && <span className="mr-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 no-underline inline-block">Not needed</span>}
           {it.priority === 'high' && !it.done && <Star className="inline size-3.5 mr-1 -mt-0.5 text-amber-400 fill-amber-400" />}
           {it.text}
         </span>
@@ -224,6 +224,7 @@ function Row({ it, isPlan, past, onToggle, onOpen, onJump }: { it: Item; isPlan:
       )}
       {it.assignee && <Avatar name={it.assignee} />}
       {!it.skipped && <DoneButton done={!!it.done} label={(isPlan ? 'Happened' : 'Done') + ((it.doneBy?.length ?? 0) > 1 ? ` · ${it.doneBy!.length}` : '')} onClick={onToggle} />}
+      <button onClick={onSkip} title={it.skipped ? 'Bring it back' : isPlan ? 'Not happening / not relevant' : 'Skip, not needed'} className={`shrink-0 h-7 px-2.5 rounded-full border text-xs font-medium flex items-center gap-1 transition ${it.skipped ? 'bg-slate-700 border-slate-700 text-white' : 'border-slate-200 text-slate-500 hover:border-amber-400 hover:text-amber-600 hover:bg-amber-50'}`}><Ban className="size-3.5" />{it.skipped ? 'Bring back' : isPlan ? 'Not relevant' : 'Skip'}</button>
     </div>
   )
 }
