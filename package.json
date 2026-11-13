@@ -1,0 +1,11 @@
+{
+  "name": "weave",
+  "private": true,
+  "scripts": {
+    "install:all": "npm i --prefix server && npm i --prefix web",
+    "dev": "concurrently -n api,web -c blue,green \"npm start --prefix server\" \"npm run dev --prefix web\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
