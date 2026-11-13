@@ -477,7 +477,14 @@ function MessageActions({ m, chatId, doneEmoji, saved, status, onReact, onReply,
   const [menu, setMenu] = useState<'add' | 'emoji' | 'status' | null>(null)
   // menus open on hover and close a moment after the mouse leaves (so it can travel into the menu)
   const closeT = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const openOn = (k: 'add' | 'emoji' | 'status') => ({ onMouseEnter: () => { clearTimeout(closeT.current); setMenu(k) } })
+  // open upward unless the message is near the top of the chat window, then open downward
+  const [below, setBelow] = useState(false)
+  const place = () => {
+    const r = box.current?.getBoundingClientRect()
+    const area = box.current?.closest('.overflow-y-auto')?.getBoundingClientRect()
+    if (r) setBelow(r.top - (area?.top ?? 0) < 300)
+  }
+  const openOn = (k: 'add' | 'emoji' | 'status') => ({ onMouseEnter: () => { clearTimeout(closeT.current); place(); setMenu(k) } })
   const leave = () => { clearTimeout(closeT.current); closeT.current = setTimeout(() => setMenu(null), 250) }
   const stay = () => clearTimeout(closeT.current)
   const box = useRef<HTMLDivElement>(null)
@@ -510,14 +517,14 @@ function MessageActions({ m, chatId, doneEmoji, saved, status, onReact, onReply,
   }
   const btn = 'size-7 grid place-items-center rounded-full bg-white/90 text-slate-400 shadow-sm hover:text-brand-600'
   // the menu sits in a wrapper that touches the buttons, so moving the mouse up into it never closes it
-  const pop = `pop-in absolute bottom-full pb-1.5 z-30 ${side === 'left' ? 'right-0' : 'left-0'}`
+  const pop = `pop-in absolute z-30 ${below ? 'top-full pt-1.5' : 'bottom-full pb-1.5'} ${side === 'left' ? 'left-0' : 'right-0'}`
   const card = 'rounded-xl border border-slate-200 bg-white shadow-xl'
   return (
     <div className={`relative self-center flex items-center gap-1 transition ${menu ? 'opacity-100 menu-open' : 'opacity-0 group-hover:opacity-100'} ${side === 'left' ? 'flex-row-reverse' : ''}`} ref={box} onMouseLeave={leave} onMouseEnter={stay}>
-      <button {...openOn('emoji')} onClick={() => setMenu('emoji')} title="React" className={btn}><SmilePlus className="size-3.5" /></button>
+      <button {...openOn('emoji')} onClick={() => { place(); setMenu('emoji') }} title="React" className={btn}><SmilePlus className="size-3.5" /></button>
       <button onMouseEnter={() => setMenu(null)} onClick={onReply} title="Reply" className={btn}><CornerUpLeft className="size-3.5" /></button>
-      <button {...openOn('add')} onClick={() => setMenu('add')} disabled={busy} title={saved.length ? 'Saved · tap to manage' : 'Save to Keeps, Plans…'} className={saved.length ? `${btn} !text-emerald-600` : btn}>{busy ? <Loader2 className="size-3.5 animate-spin" /> : saved.length ? <BookmarkCheck className="size-3.5" /> : <BookmarkPlus className="size-3.5" />}</button>
-      {status && <button {...openOn('status')} onClick={() => setMenu('status')} title="Who's in · who's done" className={`${btn} !text-brand-600`}><ListChecks className="size-3.5" /></button>}
+      <button {...openOn('add')} onClick={() => { place(); setMenu('add') }} disabled={busy} title={saved.length ? 'Saved · tap to manage' : 'Save to Keeps, Plans…'} className={saved.length ? `${btn} !text-emerald-600` : btn}>{busy ? <Loader2 className="size-3.5 animate-spin" /> : saved.length ? <BookmarkCheck className="size-3.5" /> : <BookmarkPlus className="size-3.5" />}</button>
+      {status && <button {...openOn('status')} onClick={() => { place(); setMenu('status') }} title="Who's in · who's done" className={`${btn} !text-brand-600`}><ListChecks className="size-3.5" /></button>}
       {menu === 'emoji' && (
         <div className={pop}><div className={`${card} flex gap-0.5 p-1`}>
           {QUICK.map((e) => (
